@@ -8,6 +8,21 @@ specifies that any user authenticated via an API key can "create", "read",
 =========================================================================*/
 const schema = a.schema({
 
+  interpretSentiment: a.generation({
+    aiModel: a.ai.model('Claude 3.5 Haiku'),
+    systemPrompt: 'You analyze text and determine whether the sentiment is positive, negative, or neutral.',
+  })
+  .arguments({
+    text: a.string(),
+  })
+  .returns(
+    a.customType({
+      sentiment: a.string(), // "Positive", "Negative", "Neutral"
+      confidence: a.float(), // Confidence score
+    })
+  )
+  .authorization((allow) => allow.authenticated()),
+
     
   chat: a.conversation({
     aiModel: a.ai.model('Claude 3.5 Haiku'),

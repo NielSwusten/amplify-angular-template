@@ -2,6 +2,8 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../../amplify/data/resource';
+import { Injectable } from '@angular/core';
+
 
 const client = generateClient<Schema>();
 
@@ -18,6 +20,17 @@ export class TodosComponent implements OnInit {
   ngOnInit(): void {
     this.listTodos();
   }
+  private client = generateClient<Schema>();
+
+
+  // async analyzeSentiment(text: string): Promise<void> {
+  //   try {
+  //     const result = await this.client.interpretSentiment({ text }); // <-- Call function directly
+  //     console.log('Sentiment Analysis Result:', result);
+  //   } catch (error) {
+  //     console.error('Error analyzing sentiment:', error);
+  //   }
+  // }
 
   listTodos() {
     try {
