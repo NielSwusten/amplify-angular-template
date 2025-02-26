@@ -26,7 +26,9 @@
             ],
             "styles": [
               "node_modules/@aws-amplify/ui-angular/theme.css",
+              "node_modules/leaflet/dist/leaflet.css",
               "src/styles.css"
+              
             ],
             "scripts": []
           },
@@ -86,6 +88,7 @@
             ],
             "styles": [
               "node_modules/@aws-amplify/ui-angular/theme.css",
+              "node_modules/leaflet/dist/leaflet.css",
               "src/styles.css"
             ],
             "scripts": []

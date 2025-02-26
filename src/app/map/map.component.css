@@ -1,0 +1,14 @@
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden; /* Prevent scrolling */
+}
+
+#map {
+    height: calc(100vh - 80px); /* Adjust for navbar height */
+    width: 100%;  /* Use 100% instead of 100vw to prevent overflow */
+    position: absolute;
+    top: 80px; /* Adjust this based on your navbar height */
+    left: 0;
+}

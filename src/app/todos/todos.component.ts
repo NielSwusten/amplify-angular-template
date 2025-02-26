@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../../amplify/data/resource';
 import { Injectable } from '@angular/core';
+import { AmplifyAuthenticatorModule, AuthenticatorService } from '@aws-amplify/ui-angular';
 
 
 const client = generateClient<Schema>();
@@ -10,7 +11,7 @@ const client = generateClient<Schema>();
 @Component({
   selector: 'app-todos',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule,  AmplifyAuthenticatorModule],
   templateUrl: './todos.component.html',
   styleUrl: './todos.component.css',
 })
