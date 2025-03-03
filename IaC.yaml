@@ -1,0 +1,169 @@
+# AWSTemplateFormatVersion: "2010-09-09"
+# Description: "Infrastructure for API, Lambda, Aurora PostgreSQL, and API Gateway"
+
+# Resources:
+#   ## VPC
+#   MyVPC:
+#     Type: AWS::EC2::VPC
+#     Properties:
+#       CidrBlock: 10.0.0.0/16
+#       EnableDnsSupport: true
+#       EnableDnsHostnames: true
+#       Tags:
+#         - Key: Name
+#           Value: MyVPC
+
+#   ## Subnets
+#   PublicSubnet:
+#     Type: AWS::EC2::Subnet
+#     Properties:
+#       VpcId: !Ref MyVPC
+#       CidrBlock: 10.0.1.0/24
+#       MapPublicIpOnLaunch: true
+#       AvailabilityZone: !Select [0, !GetAZs ""]
+
+#   PrivateSubnet:
+#     Type: AWS::EC2::Subnet
+#     Properties:
+#       VpcId: !Ref MyVPC
+#       CidrBlock: 10.0.2.0/24
+#       AvailabilityZone: !Select [1, !GetAZs ""]
+
+#   ## API Gateway
+#   MyApiGateway:
+#     Type: AWS::ApiGateway::RestApi
+#     Properties:
+#       Name: MyAPI
+#       Description: API Gateway for Lambda
+
+#   ## API Gateway Resource (/messages)
+#   MessagesResource:
+#     Type: AWS::ApiGateway::Resource
+#     Properties:
+#       RestApiId: !Ref MyApiGateway
+#       ParentId: !GetAtt MyApiGateway.RootResourceId
+#       PathPart: messages
+
+#   ## API Gateway Methods (POST, GET, PUT, DELETE)
+#   MessagesMethods:
+#     Type: AWS::ApiGateway::Method
+#     Properties:
+#       RestApiId: !Ref MyApiGateway
+#       ResourceId: !Ref MessagesResource
+#       HttpMethod: POST
+#       AuthorizationType: NONE
+#       Integration:
+#         Type: AWS_PROXY
+#         IntegrationHttpMethod: POST
+#         Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${MessagesLambda.Arn}/invocations
+
+#   ## Lambda Function for Messages
+#   MessagesLambda:
+#     Type: AWS::Lambda::Function
+#     Properties:
+#       FunctionName: MessagesHandler
+#       Runtime: python3.9
+#       Handler: index.lambda_handler
+#       Role: !GetAtt LambdaExecutionRole.Arn
+#       Code:
+#         ZipFile: |
+#           import json
+#           import boto3
+#           import psycopg2
+#           import os
+
+#           def lambda_handler(event, context):
+#               secret_arn = os.environ['SECRET_ARN']
+#               rds_proxy_endpoint = os.environ['RDS_PROXY_ENDPOINT']
+
+#               conn = psycopg2.connect(
+#                   host=rds_proxy_endpoint,
+#                   dbname="MyDatabase",
+#                   user="admin",
+#                   password="password"  # Should be fetched securely from AWS Secrets Manager
+#               )
+#               cursor = conn.cursor()
+
+#               http_method = event['httpMethod']
+
+#               if http_method == "POST":
+#                   data = json.loads(event['body'])
+#                   cursor.execute("INSERT INTO messages (message, date, pole_request_id, user_id) VALUES (%s, NOW(), %s, %s) RETURNING message_id",
+#                                  (data["message"], data["pole_request_id"], data["user_id"]))
+#                   conn.commit()
+#                   return {"statusCode": 201, "body": json.dumps({"message_id": cursor.fetchone()[0]})}
+
+#               elif http_method == "GET":
+#                   cursor.execute("SELECT * FROM messages")
+#                   messages = cursor.fetchall()
+#                   return {"statusCode": 200, "body": json.dumps(messages)}
+
+#               conn.close()
+#               return {"statusCode": 400, "body": "Invalid request"}
+
+#       Environment:
+#         Variables:
+#           SECRET_ARN: !Ref DatabaseSecret
+#           RDS_PROXY_ENDPOINT: !GetAtt MyRDSProxy.Endpoint
+
+#   ## Grant API Gateway Permission to Invoke Lambda
+#   MessagesLambdaApiGatewayPermission:
+#     Type: AWS::Lambda::Permission
+#     Properties:
+#       Action: lambda:InvokeFunction
+#       FunctionName: !Ref MessagesLambda
+#       Principal: apigateway.amazonaws.com
+
+#   ## Secrets Manager for DB Credentials
+#   DatabaseSecret:
+#     Type: AWS::SecretsManager::Secret
+#     Properties:
+#       Name: MyDatabaseSecret
+#       GenerateSecretString:
+#         SecretStringTemplate: '{"username": "admin"}'
+#         GenerateStringKey: "password"
+#         PasswordLength: 16
+
+#   ## RDS Proxy
+#   MyRDSProxy:
+#     Type: AWS::RDS::DBProxy
+#     Properties:
+#       DBProxyName: MyRDSProxy
+#       EngineFamily: POSTGRESQL
+#       RoleArn: !GetAtt RDSProxyRole.Arn
+#       Auth:
+#         - AuthScheme: SECRETS
+#           SecretArn: !Ref DatabaseSecret
+#       VpcSubnetIds:
+#         - !Ref PrivateSubnet
+#       VpcSecurityGroupIds:
+#         - !Ref MySecurityGroup
+
+#   ## Aurora Serverless (PostgreSQL)
+#   MyAuroraCluster:
+#     Type: AWS::RDS::DBCluster
+#     Properties:
+#       Engine: aurora-postgresql
+#       EngineMode: serverless
+#       DatabaseName: MyDatabase
+#       MasterUsername: !Sub "{{resolve:secretsmanager:${DatabaseSecret}:SecretString:username}}"
+#       MasterUserPassword: !Sub "{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}"
+#       VpcSecurityGroupIds:
+#         - !Ref MySecurityGroup
+
+#   ## Security Group
+#   MySecurityGroup:
+#     Type: AWS::EC2::SecurityGroup
+#     Properties:
+#       GroupDescription: Allow DB traffic
+#       VpcId: !Ref MyVPC
+#       SecurityGroupIngress:
+#         - IpProtocol: tcp
+#           FromPort: 5432
+#           ToPort: 5432
+#           CidrIp: 0.0.0.0/0
+
+# Outputs:
+#   ApiGatewayMessagesUrl:
+#     Description: Messages API Endpoint
+#     Value: !Sub "https://${MyApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/messages"

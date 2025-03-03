@@ -1,0 +1,45 @@
+# ## Lambda Function for Messages
+# MessagesLambda:
+#   Type: AWS::Lambda::Function
+#   Properties:
+#     FunctionName: MessagesHandler
+#     Runtime: python3.9
+#     Handler: index.lambda_handler
+#     Role: !GetAtt LambdaExecutionRole.Arn
+#     Code:
+#       ZipFile: |
+#         import json
+#         import boto3
+#         import psycopg2
+#         import os
+
+#         def lambda_handler(event, context):
+#             secret_arn = os.environ['SECRET_ARN']
+
+#             conn = psycopg2.connect(
+#                 dbname="LoadPoint",
+#                 user="admin",
+#                 password="password"  # Should be fetched securely from AWS Secrets Manager
+#             )
+#             cursor = conn.cursor()
+
+#             http_method = event['httpMethod']
+
+#             if http_method == "POST":
+#                 data = json.loads(event['body'])
+#                 cursor.execute("INSERT INTO messages (message, date, pole_request_id, user_id) VALUES (%s, NOW(), %s, %s) RETURNING message_id",
+#                                (data["message"], data["pole_request_id"], data["user_id"]))
+#                 conn.commit()
+#                 return {"statusCode": 201, "body": json.dumps({"message_id": cursor.fetchone()[0]})}
+
+#             elif http_method == "GET":
+#                 cursor.execute("SELECT * FROM messages")
+#                 messages = cursor.fetchall()
+#                 return {"statusCode": 200, "body": json.dumps(messages)}
+
+#             conn.close()
+#             return {"statusCode": 400, "body": "Invalid request"}
+
+#     Environment:
+#       Variables:
+#         SECRET_ARN: !Ref DatabaseSecret

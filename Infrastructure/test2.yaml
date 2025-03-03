@@ -1,0 +1,312 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Infrastructure for API, Lambda, Aurora PostgreSQL, and API Gateway"
+
+Resources:
+  ## VPC
+  VPCLoadPoint:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: VPCLoadPoint
+
+  ## Subnets
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPCLoadPoint
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [0, !GetAZs ""]
+
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPCLoadPoint
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs ""]
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPCLoadPoint
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: !Select [2, !GetAZs ""]
+
+  myDBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Description of subnet group
+      SubnetIds:
+        - !GetAtt PrivateSubnet.SubnetId
+        - !GetAtt PrivateSubnet2.SubnetId
+
+  ## Internet Gateway for Public Subnet
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: VPCInternetGateway
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPCLoadPoint
+      Tags:
+        - Key: Name
+          Value: PublicRouteTable
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  ## Lambda Execution Role
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaAPIPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - apigateway:POST
+                  - rds-db:connect
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ec2:CreateNetworkInterface
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DeleteNetworkInterface
+                  - ec2:AssignPrivateIpAddresses
+                  - ec2:UnassignPrivateIpAddresses
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref DatabaseSecret
+
+  ## API Gateway
+  LoadPointApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: APILoadPoint
+      Description: API Gateway for LoadPoint
+
+  ## API Gateway Resource (/messages)
+  MessagesResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref LoadPointApiGateway
+      ParentId: !GetAtt LoadPointApiGateway.RootResourceId
+      PathPart: messages
+
+  TestDBResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref LoadPointApiGateway
+      ParentId: !GetAtt LoadPointApiGateway.RootResourceId
+      PathPart: testdb
+
+  TestDBMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref LoadPointApiGateway
+      ResourceId: !Ref TestDBResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${TestDBLambda.Arn}/invocations
+
+  ## API Gateway Methods (POST, GET, PUT, DELETE)
+  MessagesMethods:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref LoadPointApiGateway
+      ResourceId: !Ref MessagesResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${MessagesLambda.Arn}/invocations
+
+  ## Lambda Function
+  MessagesLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: MessagesHandler
+      Runtime: nodejs18.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: amplify-d3sz5hpiuo0td1-ma-amplifydataamplifycodege-g9v2uj2nwigp
+        S3Key: lambdas/messages.zip
+      Timeout: 14
+
+  ## test db lambda
+  TestDBLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: TestDBHandler
+      Runtime: nodejs18.x
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref MySecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet
+          - !Ref PrivateSubnet2
+      Environment:
+        Variables:
+          SECRET_ARN: !Ref DatabaseSecret
+          REGION: !Ref AWS::Region
+      Code:
+        S3Bucket: amplify-d3sz5hpiuo0td1-ma-amplifydataamplifycodege-g9v2uj2nwigp
+        S3Key: lambdas/db.zip
+      Timeout: 14
+
+  ## Grant API Gateway Permission to Invoke Lambda
+  MessagesLambdaApiGatewayPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref MessagesLambda
+      Principal: apigateway.amazonaws.com
+
+  TestDBLambdaApiGatewayPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref TestDBLambda
+      Principal: apigateway.amazonaws.com
+
+  ## Secrets Manager for DB Credentials
+  DatabaseSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: MyDatabaseSecret
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "postgres"}'
+        GenerateStringKey: "password"
+        ExcludeCharacters: '"@/\'
+        PasswordLength: 16
+
+  ## Aurora Serverless (PostgreSQL)
+  MyAuroraCluster:
+    Type: AWS::RDS::DBCluster
+    Properties:
+      Engine: aurora-postgresql
+      EngineVersion: "16.6"
+      EngineMode: provisioned
+      DatabaseName: LoadPoint
+      MasterUsername: !Sub "{{resolve:secretsmanager:${DatabaseSecret}:SecretString:username}}"
+      MasterUserPassword: !Sub "{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}"
+      VpcSecurityGroupIds:
+        - !Ref MySecurityGroup
+      DBClusterIdentifier: database-LoadPoint
+      DBSubnetGroupName: !Ref myDBSubnetGroup
+      ServerlessV2ScalingConfiguration:
+        MinCapacity: 0 # Minimum capacity (0 ACUs)
+        MaxCapacity: 16 # Maximum capacity (16 ACUs)
+        SecondsUntilAutoPause: 300 # Auto pause after 5 minutes of inactivity
+
+  RDSDBInstance1:
+    Type: "AWS::RDS::DBInstance"
+    Properties:
+      Engine: aurora-postgresql
+      DBClusterIdentifier:
+        Ref: MyAuroraCluster
+      PubliclyAccessible: "false"
+      DBInstanceClass: db.serverless
+
+  ## Security Group
+  MySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow DB traffic
+      VpcId: !Ref VPCLoadPoint
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0 # Allow SSH from anywhere (change as needed)
+
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow EC2 SSH access
+      VpcId: !Ref VPCLoadPoint
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+
+  EC2KeyPair:
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: EC2Key
+
+    ##EC2
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t3.medium
+      ImageId: ami-06ee6255945a96aba # Use the correct AMI for your region
+      SecurityGroupIds:
+        - !Ref EC2SecurityGroup # The security group allowing traffic on port 5432
+      SubnetId: !Ref PublicSubnet # Choose the correct subnet
+      KeyName: !Ref EC2KeyPair # Your EC2 key pair for SSH access
+
+  ## API Gateway Deployment
+  ApiGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref LoadPointApiGateway
+      StageName: dev
+    DependsOn: MessagesMethods
+
+  ## API Gateway Stage
+  ApiGatewayStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref LoadPointApiGateway
+      StageName: deploy
+      DeploymentId: !Ref ApiGatewayDeployment
+
+##outputs
+Outputs:
+  ApiGatewayMessagesUrl:
+    Description: Messages API Endpoint
+    Value: !Sub "https://${LoadPointApiGateway}.execute-api.${AWS::Region}.amazonaws.com/dev/messages"

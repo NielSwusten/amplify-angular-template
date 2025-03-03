@@ -1,25 +1,25 @@
-<!-- todos.component.html -->
 <main>
   <amplify-authenticator>
-    <ng-template
-      amplifySlot="authenticated"
-      let-user="user"
-      let-signOut="signOut"
-    >
-    <h1>Hello {{user?.signInDetails?.loginId}}</h1>
+    <ng-template amplifySlot="authenticated" let-user="user" let-signOut="signOut">
+      <h1>Hello {{ user?.signInDetails?.loginId }}</h1>
     </ng-template>
   </amplify-authenticator>
 
-    <h1>My todos</h1>
-    <button (click)="createTodo()">+ new</button>
-    <ul>
-        <li *ngFor="let todo of todos;" (click)="deleteTodo(todo.id)">
-            {{ todo.content }}
-        </li>
-      </ul>
+  <h1>My todos</h1>
+  <button (click)="createTodo()">+ new</button>
+  <ul>
+    <li *ngFor="let todo of todos;" (click)="deleteTodo(todo.id)">
+      {{ todo.content }}
+    </li>
+  </ul>
 
-    
+  <div>
+    <h1>Sentiment Analysis</h1>
+    <textarea [(ngModel)]="textToAnalyze" placeholder="Enter text for sentiment analysis"></textarea>
+    <button (click)="analyzeText(textToAnalyze)">Analyze Sentiment</button>
+
+    <div *ngIf="sentiment">
+      <p>Sentiment: {{ sentiment }}</p>
+    </div>
+  </div>
 </main>
-
-
-
