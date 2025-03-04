@@ -19,7 +19,7 @@ exports.handler = async (event) => {
     const dbClient = new Client({
       host: "database-loadpoint.cluster-czu2qc0qyx83.eu-central-1.rds.amazonaws.com",
       database: "LoadPoint",
-      user: credentials.username,
+      user: credentials.user,
       password: credentials.password,
       port: 5432,
       ssl: { rejectUnauthorized: false },

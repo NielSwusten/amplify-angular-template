@@ -8,10 +8,10 @@ import { AppComponent } from './app/app.component';
 
 const amplifyConfig = parseAmplifyConfig(outputs);
 
-Amplify.configure({
-  ...amplifyConfig,
-  Predictions: outputs.custom.Predictions,
-});
+// Amplify.configure({
+//   ...amplifyConfig,
+//   Predictions: outputs.custom.Predictions,
+// });
 
 bootstrapApplication(AppComponent, appConfig)
   .catch((err) => console.error(err));

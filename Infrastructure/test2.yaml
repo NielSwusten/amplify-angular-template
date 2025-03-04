@@ -41,8 +41,8 @@ Resources:
     Properties:
       DBSubnetGroupDescription: Description of subnet group
       SubnetIds:
-        - !GetAtt PrivateSubnet.SubnetId
-        - !GetAtt PrivateSubnet2.SubnetId
+        - !Ref PrivateSubnet
+        - !Ref PrivateSubnet2
 
   ## Internet Gateway for Public Subnet
   InternetGateway:
@@ -51,6 +51,12 @@ Resources:
       Tags:
         - Key: Name
           Value: VPCInternetGateway
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPCLoadPoint
+      InternetGatewayId: !Ref InternetGateway
 
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
@@ -72,6 +78,41 @@ Resources:
       RouteTableId: !Ref PublicRouteTable
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
+
+  ## NAT Gateway
+  NatGatewayEIP:
+    Type: AWS::EC2::EIP
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEIP.AllocationId
+      SubnetId: !Ref PublicSubnet
+
+  ## Route Table for Private Subnets
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPCLoadPoint
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
 
   ## Lambda Execution Role
   LambdaExecutionRole:
@@ -171,9 +212,9 @@ Resources:
       Code:
         S3Bucket: amplify-d3sz5hpiuo0td1-ma-amplifydataamplifycodege-g9v2uj2nwigp
         S3Key: lambdas/messages.zip
-      Timeout: 14
+      Timeout: 15
 
-  ## test db lambda
+  ## Test DB Lambda
   TestDBLambda:
     Type: AWS::Lambda::Function
     Properties:
@@ -183,7 +224,7 @@ Resources:
       Role: !GetAtt LambdaExecutionRole.Arn
       VpcConfig:
         SecurityGroupIds:
-          - !Ref MySecurityGroup
+          - !Ref MySecurityGroup # Ensure MySecurityGroup is created first
         SubnetIds:
           - !Ref PrivateSubnet
           - !Ref PrivateSubnet2
@@ -194,7 +235,7 @@ Resources:
       Code:
         S3Bucket: amplify-d3sz5hpiuo0td1-ma-amplifydataamplifycodege-g9v2uj2nwigp
         S3Key: lambdas/db.zip
-      Timeout: 14
+      Timeout: 55
 
   ## Grant API Gateway Permission to Invoke Lambda
   MessagesLambdaApiGatewayPermission:
@@ -228,6 +269,7 @@ Resources:
     Properties:
       Engine: aurora-postgresql
       EngineVersion: "16.6"
+      Port: 5432
       EngineMode: provisioned
       DatabaseName: LoadPoint
       MasterUsername: !Sub "{{resolve:secretsmanager:${DatabaseSecret}:SecretString:username}}"
@@ -237,16 +279,16 @@ Resources:
       DBClusterIdentifier: database-LoadPoint
       DBSubnetGroupName: !Ref myDBSubnetGroup
       ServerlessV2ScalingConfiguration:
-        MinCapacity: 0 # Minimum capacity (0 ACUs)
-        MaxCapacity: 16 # Maximum capacity (16 ACUs)
-        SecondsUntilAutoPause: 300 # Auto pause after 5 minutes of inactivity
+        MinCapacity: 0
+        MaxCapacity: 16
+        SecondsUntilAutoPause: 300
 
+  ## RDS Instance (Separate from Cluster dependency)
   RDSDBInstance1:
-    Type: "AWS::RDS::DBInstance"
+    Type: AWS::RDS::DBInstance
     Properties:
       Engine: aurora-postgresql
-      DBClusterIdentifier:
-        Ref: MyAuroraCluster
+      DBClusterIdentifier: !Ref MyAuroraCluster
       PubliclyAccessible: "false"
       DBInstanceClass: db.serverless
 
@@ -258,9 +300,24 @@ Resources:
       VpcId: !Ref VPCLoadPoint
       SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-          CidrIp: 0.0.0.0/0 # Allow SSH from anywhere (change as needed)
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref LambdaSecurityGroup # Reference to the Lambda's security group
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref EC2SecurityGroup # Allow traffic from EC2's security group
+
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow Lambda traffic
+      VpcId: !Ref VPCLoadPoint
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: 0.0.0.0/0 # Adjust as needed
 
   EC2SecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -278,16 +335,16 @@ Resources:
     Properties:
       KeyName: EC2Key
 
-    ##EC2
+  ## EC2
   EC2Instance:
     Type: AWS::EC2::Instance
     Properties:
-      InstanceType: t3.medium
+      InstanceType: t3.micro
       ImageId: ami-06ee6255945a96aba # Use the correct AMI for your region
       SecurityGroupIds:
-        - !Ref EC2SecurityGroup # The security group allowing traffic on port 5432
-      SubnetId: !Ref PublicSubnet # Choose the correct subnet
-      KeyName: !Ref EC2KeyPair # Your EC2 key pair for SSH access
+        - !Ref EC2SecurityGroup
+      SubnetId: !Ref PublicSubnet
+      KeyName: !Ref EC2KeyPair
 
   ## API Gateway Deployment
   ApiGatewayDeployment:
@@ -305,7 +362,7 @@ Resources:
       StageName: deploy
       DeploymentId: !Ref ApiGatewayDeployment
 
-##outputs
+## Outputs
 Outputs:
   ApiGatewayMessagesUrl:
     Description: Messages API Endpoint
