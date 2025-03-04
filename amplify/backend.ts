@@ -94,7 +94,7 @@ backend.addOutput({
             type: "ALL",
           },
           proxy: false,
-          region: backend.auth.stack.region,
+          region: "eu-central-1",
         },
       },
     },
