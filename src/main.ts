@@ -10,8 +10,11 @@ const amplifyConfig = parseAmplifyConfig(outputs);
 
 // Amplify.configure({
 //   ...amplifyConfig,
-//   Predictions: outputs.custom.Predictions,
+//   Predictions: {
+//     region: 'eu-central-1',  // Make sure this matches your region
+//   }
 // });
+
 
 bootstrapApplication(AppComponent, appConfig)
   .catch((err) => console.error(err));
