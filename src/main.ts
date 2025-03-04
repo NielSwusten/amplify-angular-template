@@ -8,26 +8,6 @@ import { AppComponent } from './app/app.component';
 import { config } from "aws-sdk";
 const amplifyConfig = parseAmplifyConfig(outputs);
 
-// predictionsConfig.interpret.interpretText.region = "eu-central-1";  // Correctly set the region for Predictions service
-
-
-  Amplify.configure({
-    ...amplifyConfig,
-    Predictions: 
-    {
-      "interpret": {
-        "interpretText": {
-          "defaults": {
-            "type": "ALL"
-          },
-          "proxy": false,
-          "region": "eu-central-1"
-        }
-      }
-    }
-    
-  });
-
 
 
 
