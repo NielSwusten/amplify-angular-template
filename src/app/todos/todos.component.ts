@@ -31,13 +31,13 @@ export class TodosComponent implements OnInit {
   private client = generateClient<Schema>();
 
   analyzeText(text: string) {
+    console.log(this.sentimentService.analyzeSentiment)
     this.sentimentService.analyzeSentiment(text).then(result => {
       if (typeof result === 'string') {
         this.sentiment = result;
       } else {
         this.sentiment = undefined;
       }
-      console.log('The sentiment of the text is:', this.sentiment);
     }).catch(error => {
       console.error('Error analyzing sentiment:', error);
       this.sentiment = undefined;

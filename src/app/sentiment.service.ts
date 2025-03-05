@@ -33,12 +33,21 @@ export class SentimentService {
       },
     });
 
-    // Result should contain the sentiment analysis response
-    console.log('Sentiment Analysis Result:', result);
     const sentiment = result.textInterpretation.sentiment;
+    if (!sentiment) {
+      console.warn('No sentiment data available.');
+      return;
+    }
+
+    console.log('Sentiment Analysis Result:', result);
     console.log('Sentiment:', sentiment); // 'POSITIVE', 'NEGATIVE', 'NEUTRAL'
 
-    return "test"; // Return the sentiment or use it as needed
+    const { positive = 0, negative = 0, neutral = 0 } = sentiment;
+    const maxScore = Math.max(positive , negative, neutral);
+
+    const roundedMaxScore = maxScore.toFixed(3)
+
+    return `${sentiment.predominant} : ${Number(roundedMaxScore) * 100  }%`
   } catch (error) {
     console.error('Error interpreting sentiment:', error);
   }
